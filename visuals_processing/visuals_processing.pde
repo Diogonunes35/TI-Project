@@ -1,10 +1,16 @@
-//connection with the arduino
+import processing.sound.*;
 import processing.serial.*;
 
 Serial myPort;
 
 String data="";
 float roll, pitch, value;
+
+//sound
+SoundFile sound;
+Reverb reverb;
+
+boolean soundLoaded = false;
 
 // =========================
 // INPUT MODES
@@ -28,8 +34,15 @@ void setup() {
   size(1200, 800);
   textFont(createFont("Arial", 16));
 
-  myPort = new Serial(this, "COM6", 9600); // starts the serial communication
-  myPort.bufferUntil('\n');
+  //myPort = new Serial(this, "COM6", 9600); // starts the serial communication
+  //myPort.bufferUntil('\n');
+
+  println(Serial.list());
+  if (Serial.list().length > 0) {
+    myPort = new Serial(this, Serial.list()[0], 9600);
+    myPort.bufferUntil('\n');
+  }
+
 
   slider1 = new Slider(650, 150, 400);
   slider2 = new Slider(650, 280, 400);
@@ -48,6 +61,28 @@ void draw() {
   slider1.value = getInputValue(pitchMode);
   slider2.value = getInputValue(reverbMode);
   slider3.value = getInputValue(heightMode);
+
+  if (soundLoaded && sound != null && reverb != null) {
+
+    float v = slider2.value;
+
+    // REVERB (valores positivos)
+    float wet = map(max(v, 0), 0, 100, 0, 1);
+    float room = map(max(v, 0), 0, 100, 0.2, 1.0);
+    float damp = map(max(v, 0), 0, 100, 0.1, 0.9);
+
+    reverb.wet(wet);
+    reverb.room(room);
+    reverb.damp(damp);
+
+    // VOLUME (valores negativos)
+    float amp = 1.0;
+    if (v < 0) {
+      amp = map(v, -100, 0, 0.2, 1.0);
+    }
+
+    sound.amp(amp);
+  }
 }
 
 // =========================
@@ -65,6 +100,27 @@ float getInputValue(int mode) {
   return 0;
 }
 
+// Read data from the Serial Port
+void serialEvent (Serial myPort) {
+  // reads the data from the Serial Port up to the character '.' and puts it into the String variable "data".
+  data = myPort.readStringUntil('\n');
+
+  // if you got any bytes other than the linefeed:
+  if (data != null) {
+    data = trim(data);
+    // split the string at "/"
+    String items[] = split(data, '/');
+    if (items.length > 1) {
+
+      //--- Roll,Pitch in degrees
+      roll = float(items[0]);
+      pitch = float(items[1]);
+      value = float(items[2]);
+    }
+  }
+}
+
+
 // =========================
 // DRAW UI
 // =========================
@@ -79,6 +135,7 @@ void drawLeftPanel() {
   drawModeBox(160, 120, "Pitch", pitchMode);
   drawModeBox(160, 200, "Reverb", reverbMode);
   drawModeBox(160, 280, "Bass", heightMode);
+  drawSoundButton(160, 360);
 }
 
 void drawModeBox(int x, int y, String label, int mode) {
@@ -147,6 +204,58 @@ class Slider {
   }
 }
 
+//upload sound
+void drawSoundButton(int x, int y) {
+
+  String label = soundLoaded ? "SOUND LOADED" : "LOAD SOUND";
+
+  textSize(16);
+  float w = textWidth(label) + 30;
+  float h = 60;
+
+  boolean hover = mouseX > x && mouseX < x + w &&
+    mouseY > y && mouseY < y + h;
+
+  if (hover) fill(255, 255, 255, 40);
+  else noFill();
+
+  stroke(255);
+  rect(x, y, w, h, 60);
+
+  fill(255);
+  textAlign(CENTER, CENTER);
+  text(label, x + w/2, y + h/2);
+}
+
+void fileSelected(File selection) {
+  if (selection == null) return;
+
+  if (sound != null) {
+    sound.stop();
+  }
+
+  sound = new SoundFile(this, selection.getAbsolutePath());
+
+  reverb = new Reverb(this);
+  reverb.process(sound);
+  reverb.room(0.8);
+  reverb.damp(0.5);
+
+  sound.loop();
+
+  soundLoaded = true;
+}
+
+boolean overSoundButton(int x, int y) {
+  String label = soundLoaded ? "SOUND LOADED" : "LOAD SOUND";
+  float w = textWidth(label) + 30;
+  float h = 60;
+
+  return mouseX > x && mouseX < x + w &&
+    mouseY > y && mouseY < y + h;
+}
+
+
 // =========================
 // WAVEFORM
 // =========================
@@ -173,29 +282,13 @@ void mousePressed() {
   if (overBox(50, 120)) pitchMode = (pitchMode + 1) % 3;
   if (overBox(50, 200)) reverbMode = (reverbMode + 1) % 3;
   if (overBox(50, 280)) heightMode = (heightMode + 1) % 3;
+
+  if (overSoundButton(160, 360)) {
+    selectInput("Select a sound file", "fileSelected");
+  }
 }
 
 boolean overBox(int x, int y) {
   return mouseX > x && mouseX < x + 300 &&
     mouseY > y && mouseY < y + 60;
-}
-
-// Read data from the Serial Port
-void serialEvent (Serial myPort) {
-  // reads the data from the Serial Port up to the character '.' and puts it into the String variable "data".
-  data = myPort.readStringUntil('\n');
-
-  // if you got any bytes other than the linefeed:
-  if (data != null) {
-    data = trim(data);
-    // split the string at "/"
-    String items[] = split(data, '/');
-    if (items.length > 1) {
-
-      //--- Roll,Pitch in degrees
-      roll = float(items[0]);
-      pitch = float(items[1]);
-      value = float(items[2]);
-    }
-  }
 }
